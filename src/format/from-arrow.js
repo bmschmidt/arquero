@@ -35,6 +35,36 @@ export default function(arrowTable, options = {}) {
 }
 
 function arrayFromArrow(column) {
+  if (column.dictionary) {
+    return unpackDictionary(column)
+  }
   // if has null values, extract to standard array
   return column.nullCount > 0 ? [...column] : column.toArray();
+}
+
+function unpackDictionary(column) {
+  // Only decode utf-8 once per dictionary key, rather than once per occurrence.
+  // Column -- an arrow column Dictionary vector.
+  const values = new Array(column.length);
+  // Use the last chunk in case the dictionary builds as it goes.
+  const ks = column.chunks[column.chunks.length-1].dictionary.toArray();
+  let i = 0;
+  for (const chunk of column.chunks) {
+    const nullmap = chunk.nullBitmap || [];
+    for (let j=0; j < chunk.data.length; j++) {
+      const ix = chunk.data.values[j];
+      // Fancy bit operations because the null masks pack 8 observations into each bit.
+      // ix >> 3 advances the byte every 8 bits; 
+      // (1 << (ix % 8) checks if the bit is set for the particular position inside the relevant byte.
+      // You must check nullmap.length because if there are no null values in a chunk,
+      // the nullmap doesn't exist.
+      if (nullmap.length && !(nullmap[j >> 3] & (1 << (j % 8)))) {
+        values[i] = null;
+      } else {
+        values[i] = ks[ix];
+      }
+      i++;
+    }
+  }
+  return codes;
 }
